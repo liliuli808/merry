@@ -5,7 +5,6 @@ import * as CameraModule from '@mediapipe/camera_utils';
 import * as DrawingModule from '@mediapipe/drawing_utils';
 import { GestureState } from '../types';
 
-// Helper to extract exports from MediaPipe modules which often have inconsistent ESM structures
 const getExport = (mod: any, name: string) => {
   if (!mod) return undefined;
   if (mod[name]) return mod[name];
@@ -24,11 +23,12 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const cameraRef = useRef<any>(null);
+  const handsRef = useRef<any>(null);
 
   useEffect(() => {
     if (!videoRef.current || !canvasRef.current) return;
 
-    // Extract necessary components with fallbacks
     const Hands = getExport(HandsModule, 'Hands');
     const Camera = getExport(CameraModule, 'Camera');
     const HAND_CONNECTIONS = getExport(HandsModule, 'HAND_CONNECTIONS');
@@ -36,7 +36,6 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
     const drawLandmarks = getExport(DrawingModule, 'drawLandmarks');
 
     if (!Hands || !Camera) {
-      console.error('MediaPipe components not found:', { Hands, Camera });
       setCameraError('MediaPipe library failed to load.');
       return;
     }
@@ -44,6 +43,7 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
     const hands = new Hands({
       locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
+    handsRef.current = hands;
 
     hands.setOptions({
       maxNumHands: 1,
@@ -79,7 +79,6 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
           const pinkyTip = landmarks[20];
 
           const getDist = (p1: any, p2: any) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
-          
           const avgDistFromWrist = (
             getDist(thumbTip, wrist) +
             getDist(indexTip, wrist) +
@@ -102,41 +101,49 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
       canvasCtx.restore();
     });
 
-    // Use a more standard resolution to avoid NotReadableError on some drivers
     const camera = new Camera(videoRef.current, {
       onFrame: async () => {
         if (videoRef.current && videoRef.current.readyState >= 2) {
           try {
             await hands.send({ image: videoRef.current });
           } catch (e) {
-            console.error("Hands processing error:", e);
+            // Ignore frame errors
           }
         }
       },
       width: 640,
       height: 480,
     });
+    cameraRef.current = camera;
 
-    const initCamera = async () => {
+    const startCamera = async (retries = 2) => {
       try {
+        // Clear any existing stream before starting
+        if (videoRef.current && videoRef.current.srcObject) {
+          const stream = videoRef.current.srcObject as MediaStream;
+          stream.getTracks().forEach(t => t.stop());
+          videoRef.current.srcObject = null;
+        }
+
         await camera.start();
         setCameraActive(true);
         setCameraError(null);
       } catch (err: any) {
-        console.error("Camera start failed:", err);
-        setCameraActive(false);
-        if (err.name === 'NotReadableError') {
-          setCameraError("Camera is being used by another app.");
+        console.error("Camera attempt failed:", err);
+        if (retries > 0) {
+          setTimeout(() => startCamera(retries - 1), 1000);
         } else {
-          setCameraError(err.message || "Failed to start camera.");
+          setCameraActive(false);
+          setCameraError(err.name === 'NotReadableError' 
+            ? "Camera is locked. Please close other apps using it." 
+            : "Could not start camera feed.");
         }
       }
     };
 
-    initCamera();
+    startCamera();
 
     return () => {
-      // Explicitly stop all tracks to release hardware lock
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
@@ -148,13 +155,12 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
 
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {/* Hand Monitoring Panel */}
       <div className="absolute bottom-8 left-8 w-48 h-36 bg-black/60 backdrop-blur-md rounded-lg border border-white/20 overflow-hidden shadow-2xl flex flex-col pointer-events-auto">
         <div className="h-6 px-2 flex items-center justify-between border-b border-white/10">
-          <span className="text-[10px] text-white/50 font-mono tracking-widest uppercase">Cam_Feed</span>
+          <span className="text-[10px] text-white/50 font-mono tracking-widest uppercase">Monitor</span>
           <div className={`w-2 h-2 rounded-full ${cameraActive ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
         </div>
-        <div className="relative flex-1 bg-black/40 flex items-center justify-center">
+        <div className="relative flex-1 bg-black/40 flex items-center justify-center overflow-hidden">
           {cameraError ? (
             <div className="p-3 text-center">
               <p className="text-[10px] text-red-400 font-bold uppercase mb-1 leading-tight">{cameraError}</p>
@@ -162,21 +168,16 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
                 onClick={() => window.location.reload()}
                 className="text-[8px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white transition-colors"
               >
-                RELOAD PAGE
+                RETRY
               </button>
             </div>
           ) : !cameraActive ? (
             <div className="flex flex-col items-center">
               <div className="w-4 h-4 border-2 border-yellow-500/50 border-t-yellow-500 rounded-full animate-spin mb-2" />
-              <span className="text-[9px] text-yellow-500/70 font-mono tracking-widest animate-pulse">INITIATING...</span>
+              <span className="text-[9px] text-yellow-500/70 font-mono tracking-widest animate-pulse">CONNECTING...</span>
             </div>
           ) : null}
-          <video
-            ref={videoRef}
-            className="hidden"
-            playsInline
-            muted
-          />
+          <video ref={videoRef} className="hidden" playsInline muted />
           <canvas
             ref={canvasRef}
             width={320}
@@ -186,7 +187,6 @@ const UIOverlay: React.FC<UIOverlayProps> = ({ gesture, onGestureDetected }) => 
         </div>
       </div>
 
-      {/* Status Lights */}
       <div className="absolute bottom-48 left-8 flex flex-col space-y-4 pointer-events-auto">
         <div className="flex items-center space-x-3 group">
           <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${

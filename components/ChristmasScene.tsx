@@ -8,7 +8,6 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { PARTICLE_COUNT, COLOR_ARRAY, SCENE_CONFIG } from '../constants';
 import { GestureState } from '../types';
 
-// Fix: Add JSX intrinsic elements type augmentation for React Three Fiber to resolve TypeScript errors
 declare global {
   namespace JSX {
     interface IntrinsicElements extends ThreeElements {}
@@ -27,13 +26,11 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
   
   const halfCount = Math.floor(PARTICLE_COUNT / 2);
 
-  // Pre-calculate target positions for Tree and Nebula
   const targets = useMemo(() => {
     const nebula = new Float32Array(PARTICLE_COUNT * 3);
     const tree = new Float32Array(PARTICLE_COUNT * 3);
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
-      // Nebula: Random spherical
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos((Math.random() * 2) - 1);
       const r = Math.pow(Math.random(), 1/3) * SCENE_CONFIG.NEBULA_RADIUS;
@@ -41,7 +38,6 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
       nebula[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       nebula[i * 3 + 2] = r * Math.cos(phi);
 
-      // Tree: Cone-like
       const py = Math.random() * SCENE_CONFIG.TREE_HEIGHT;
       const pr = (1 - py / SCENE_CONFIG.TREE_HEIGHT) * SCENE_CONFIG.TREE_RADIUS * (0.2 + Math.random() * 0.8);
       const angle = Math.random() * Math.PI * 2;
@@ -52,7 +48,6 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
     return { nebula, tree };
   }, []);
 
-  // Initialize positions
   const currentPositions = useMemo(() => new Float32Array(PARTICLE_COUNT * 3), []);
   useEffect(() => {
     for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -62,7 +57,6 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
     }
   }, [targets, currentPositions]);
 
-  // Set initial colors
   useEffect(() => {
     [meshRef.current, sphereMeshRef.current].forEach((mesh, meshIdx) => {
       if (!mesh) return;
@@ -81,7 +75,6 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
     const targetArr = gesture === 'TREE' ? targets.tree : targets.nebula;
     const lerpFactor = gesture === 'IDLE' ? 0.02 : 0.08;
 
-    // Update Box Particles
     for (let i = 0; i < halfCount; i++) {
       const idx = i;
       currentPositions[idx * 3] += (targetArr[idx * 3] - currentPositions[idx * 3]) * lerpFactor;
@@ -96,7 +89,6 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
       meshRef.current.setMatrixAt(i, dummy.matrix);
     }
     
-    // Update Sphere Particles
     for (let i = 0; i < (PARTICLE_COUNT - halfCount); i++) {
       const idx = halfCount + i;
       currentPositions[idx * 3] += (targetArr[idx * 3] - currentPositions[idx * 3]) * lerpFactor;
@@ -117,12 +109,10 @@ const Particles: React.FC<SceneInnerProps> = ({ gesture }) => {
 
   return (
     <>
-      {/* Fix: Explicitly cast undefined to any in args to avoid strict type checking errors */}
       <instancedMesh ref={meshRef} args={[undefined as any, undefined as any, halfCount]}>
         <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial metalness={0.9} roughness={0.1} />
       </instancedMesh>
-      {/* Fix: Explicitly cast undefined to any in args to avoid strict type checking errors */}
       <instancedMesh ref={sphereMeshRef} args={[undefined as any, undefined as any, PARTICLE_COUNT - halfCount]}>
         <sphereGeometry args={[0.6, 8, 8]} />
         <meshStandardMaterial metalness={0.9} roughness={0.1} />
