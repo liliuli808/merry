@@ -1,0 +1,7 @@
+{
+  "name": "Luxury Christmas Particle Interaction",
+  "description": "An interactive 3D Christmas experience where hand gestures control thousands of gemstone particles using MediaPipe and Three.js.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
